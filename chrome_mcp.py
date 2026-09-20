@@ -121,6 +121,7 @@ def jev_browser_tabs() -> dict:
 def drive(goal, tab, allowed_origins, max_steps, max_seconds, act):
     global pending_reply
     agent = None
+    completion_status = None
     started = time.monotonic()
     try:
         provider_setup()
@@ -140,7 +141,7 @@ def drive(goal, tab, allowed_origins, max_steps, max_seconds, act):
             and decisions < max_steps * 2
         ):
             if origin(agent.state["page"]["url"]) not in allowed_origins:
-                publish(status="origin_blocked")
+                completion_status = "origin_blocked"
                 break
             try:
                 agent.command("predict")
@@ -149,7 +150,7 @@ def drive(goal, tab, allowed_origins, max_steps, max_seconds, act):
                     break
                 page = agent.state["page"]
                 if origin(page["url"]) not in allowed_origins:
-                    publish(status="origin_blocked")
+                    completion_status = "origin_blocked"
                     break
                 decision = agent.state["decision"]
                 publish(
@@ -158,7 +159,8 @@ def drive(goal, tab, allowed_origins, max_steps, max_seconds, act):
                     }
                 )
                 if not act:
-                    publish(status="dry_run", proposedAction=decision["choice"])
+                    publish(proposedAction=decision["choice"])
+                    completion_status = "dry_run"
                     break
                 if decision["choice"] not in ("DONE", "BLOCKED"):
                     action = next(a for a in page["actions"] if a["id"] == decision["choice"])
@@ -193,7 +195,7 @@ def drive(goal, tab, allowed_origins, max_steps, max_seconds, act):
                 agent.command("act", {"fingerprint": page["fingerprint"]})
                 publish(steps=len(agent.state["history"]), elapsedSeconds=round(time.monotonic() - started, 3))
                 if agent.state["status"] in ("done", "blocked"):
-                    publish(status="needs_verification" if agent.state["status"] == "done" else "blocked")
+                    completion_status = "needs_verification" if agent.state["status"] == "done" else "blocked"
                     break
             except StalePage:
                 agent.state["page"] = agent.browser.observe(screenshot=False)
@@ -201,9 +203,9 @@ def drive(goal, tab, allowed_origins, max_steps, max_seconds, act):
                 agent.state["status"] = "ready"
                 decisions += 1
         if stopped.is_set():
-            publish(status="stopped")
-        elif public_state()["status"] in ("running", "needs_host"):
-            publish(status="budget_reached")
+            completion_status = "stopped"
+        elif completion_status is None:
+            completion_status = "budget_reached"
         page = agent.browser.observe(screenshot=False)
         # Single final verification artifact, not a background recording.
         if origin(page["url"]) in allowed_origins:
@@ -219,7 +221,12 @@ def drive(goal, tab, allowed_origins, max_steps, max_seconds, act):
                 # successfully completed browser task and its DOM evidence.
                 final["screenshotError"] = str(exc)[:300]
             publish(final=final, history=agent.state["history"])
-        publish(request=None, elapsedSeconds=round(time.monotonic() - started, 3), goalVerified=False)
+        publish(
+            status=completion_status,
+            request=None,
+            elapsedSeconds=round(time.monotonic() - started, 3),
+            goalVerified=False,
+        )
     except Exception as exc:
         # Provider code suppresses response bodies; never emit credentials.
         publish(status="error", error=str(exc)[:500], request=None, elapsedSeconds=round(time.monotonic() - started, 3))
@@ -279,6 +286,10 @@ def jev_browser_respond(request_id: str, text: str) -> dict:
         if not isinstance(text, str) or not text or len(text) > 2000:
             raise ValueError("Expected nonempty text, at most 2000 characters")
         pending_reply = text
+        # A host may poll again immediately after an accepted reply. Clear the
+        # request synchronously so it cannot submit the same handoff twice while
+        # the worker thread is waking up.
+        state.update(status="running", request=None)
         responded.set()
         return {"accepted": True}
 

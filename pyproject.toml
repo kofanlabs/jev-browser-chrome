@@ -1,6 +1,6 @@
 [project]
 name = "jev-ultrafast"
-version = "0.2.0"
+version = "0.2.1"
 description = "Jev browser agent for existing Chrome tabs through a local extension bridge and MCP."
 readme = "README.md"
 license = "MIT"
