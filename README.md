@@ -1,6 +1,10 @@
-<img src="docs/banner.svg" alt="Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
+# Jev Browser Bridge — Browser Automation for Windows
 
-# Jev Ultrafast ⚡
+A Windows adaptation of [Jev Ultrafast](https://github.com/browser-use/jev-ultrafast)
+for Chrome and Edge, with extension-based browser access and MCP integration for
+Codex, Grok, and other agents.
+
+<img src="docs/banner.svg" alt="Upstream Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
 
 > [!IMPORTANT]
 > **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
