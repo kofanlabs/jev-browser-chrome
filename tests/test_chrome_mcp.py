@@ -5,21 +5,48 @@ import pytest
 import chrome_mcp
 
 
-def test_open_tab_returns_observed_tab_without_replacing_existing(monkeypatch):
+@pytest.mark.parametrize("version", ["1.0.1", "", None, "unknown"])
+def test_open_tab_requires_supported_extension_without_mutating(monkeypatch, version):
     monkeypatch.setattr(chrome_mcp, "worker", None)
-    monkeypatch.setattr(chrome_mcp, "connection_ready", lambda: True)
+    monkeypatch.setattr(chrome_mcp, "extension_status", lambda: {"connected": True, "extensionVersion": version})
+    monkeypatch.setattr(chrome_mcp, "extension_call", lambda *_: pytest.fail("Must not create a tab"))
+    assert chrome_mcp.jev_browser_open_tab("https://example.com/")["status"] == "needs_extension_update"
+
+
+def test_open_tab_disconnected_does_not_mutate(monkeypatch):
+    monkeypatch.setattr(chrome_mcp, "worker", None)
+    monkeypatch.setattr(chrome_mcp, "extension_status", lambda: {"connected": False})
+    monkeypatch.setattr(chrome_mcp, "extension_call", lambda *_: pytest.fail("Must not create a tab"))
+    assert chrome_mcp.jev_browser_open_tab("https://example.com/")["status"] == "needs_browser_connection"
+
+
+def test_open_tab_rejects_during_active_run(monkeypatch):
+    class Running:
+        def is_alive(self):
+            return True
+
+    monkeypatch.setattr(chrome_mcp, "worker", Running())
+    monkeypatch.setattr(chrome_mcp, "extension_call", lambda *_: pytest.fail("Must not create a tab"))
+    with pytest.raises(ValueError, match="current run"):
+        chrome_mcp.jev_browser_open_tab("https://example.com/")
+
+
+@pytest.mark.parametrize("active", [True, False])
+def test_open_tab_returns_observed_tab_without_replacing_existing(monkeypatch, active):
+    monkeypatch.setattr(chrome_mcp, "worker", None)
+    monkeypatch.setattr(chrome_mcp, "extension_status", lambda: {"connected": True, "extensionVersion": "1.0.2"})
     monkeypatch.setattr(chrome_mcp, "listed", {"old": {"url": "https://example.org/"}})
     calls = []
-    tab = {"tabId": "new", "url": "https://example.com/", "active": True}
+    tab = {"tabId": "new", "url": "https://example.com/", "active": active}
 
     def call(method, params):
         calls.append((method, params))
         return tab
 
     monkeypatch.setattr(chrome_mcp, "extension_call", call)
-    assert chrome_mcp.jev_browser_open_tab(tab["url"]) == {"status": "opened", "tab": tab}
+    assert chrome_mcp.jev_browser_open_tab(tab["url"], active=active) == {"status": "opened", "tab": tab}
     assert "old" in chrome_mcp.listed and chrome_mcp.listed["new"] == tab
-    assert calls == [("create_tab", {"url": tab["url"], "active": True})]
+    assert calls == [("create_tab", {"url": tab["url"], "active": active})]
 
 
 @pytest.mark.parametrize("url", ["file:///secret", "javascript:alert(1)", "https://user:pass@example.com"])
@@ -30,7 +57,7 @@ def test_open_tab_rejects_non_web_or_credential_urls(url):
 
 def test_open_tab_timeout_is_not_retried(monkeypatch):
     monkeypatch.setattr(chrome_mcp, "worker", None)
-    monkeypatch.setattr(chrome_mcp, "connection_ready", lambda: True)
+    monkeypatch.setattr(chrome_mcp, "extension_status", lambda: {"connected": True, "extensionVersion": "1.0.2"})
     calls = []
 
     def call(*args):

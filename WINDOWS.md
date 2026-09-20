@@ -1,7 +1,7 @@
 # Jev Browser Chrome — easy Windows setup
 
-This edition lets Jev work in normal tabs that are already open and signed in
-inside your personal Chrome profile. It does not launch a separate profile, copy
+This edition lets Jev work in existing tabs or open new HTTP(S) tabs
+inside your signed-in personal Chrome profile. It does not launch a separate profile, copy
 cookies, or require `chrome://inspect/#remote-debugging`.
 
 ## Requirements
@@ -49,11 +49,14 @@ screenshot.
 Extract the new files over the same folder, run `Install-Windows.cmd` again, and
 click **Reload** on the **Jev Browser Bridge** card in `chrome://extensions`.
 Reloading is required when the extension version changes.
+Restart the MCP host when Python tools change so it discovers newly added tools.
 
 ## Troubleshooting
 
 - **needs_extension:** The extension is disabled, missing, or has not
   reconnected. Enable it and click **Reload** on its extension card.
+- **needs_extension_update:** Opening a tab needs extension 1.0.2 or newer.
+  Update its files and reload the extension; check `jev_browser_status` for the loaded version.
 - **No Jev API key is configured:** Save a key through `Settings.cmd`.
 - **The tab is not listed:** Open a normal `http://` or `https://` page. Chrome's
   internal settings pages are intentionally excluded.
@@ -65,8 +68,8 @@ Reloading is required when the extension version changes.
 
 Live testing on September 20, 2026 covered inventory filtering and sorting, an
 editorial form with generated text, and a preferences modal. All three tasks
-completed successfully in 3.399–3.904 seconds. The automated suite contains 35
-passing tests. These measurements describe the tested machine and pages; they do
+completed successfully in 3.399–3.904 seconds. Automated regression tests also
+cover the MCP and extension new-tab paths. These measurements describe the tested machine and pages; they do
 not guarantee the same speed or success rate on every website.
 
 This is an independent Windows integration based on

@@ -13,7 +13,7 @@ Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks 
 **Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
 
 > This KofanLabs fork adds a Windows MCP server and a Chrome extension bridge for
-> controlling tabs that are already open in your signed-in Chrome. It does not use
+> controlling existing tabs and opening task-related tabs in your signed-in Chrome. It does not use
 > Chrome remote debugging, copy browser profiles, or launch a separate browser.
 
 ## Windows quick start
@@ -87,8 +87,10 @@ uv run jev
 Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
 
 The Windows MCP integration connects through the included **Jev Browser Bridge**
-Chrome extension. It controls existing signed-in HTTP(S) tabs without Chrome
-remote debugging. The upstream demo can still use
+Chrome extension. It controls HTTP(S) tabs and can open new ones in the connected
+profile without Chrome remote debugging. Use `jev_browser_open_tab(url, active=true)`
+with extension 1.0.2 or newer, then list tabs after loading before starting a run.
+The upstream demo can still use
 [Browser Harness](https://github.com/browser-use/browser-harness).
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
@@ -158,6 +160,7 @@ uv run ruff check .
 uv run pytest
 node --check jev_ultrafast/static/app.js
 node --check jev_ultrafast/snapshot.js
+node --test tests/test_extension_tabs.cjs
 uv build
 ```
 

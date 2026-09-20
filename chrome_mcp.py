@@ -114,8 +114,19 @@ def jev_browser_open_tab(url: str, active: bool = True) -> dict:
     with lock:
         if worker is not None and worker.is_alive():
             raise ValueError("Stop or finish the current run before opening a tab")
-        if not connection_ready():
+        bridge = extension_status()
+        if not bridge.get("connected"):
             return {"status": "needs_browser_connection"}
+        try:
+            version = tuple(int(part) for part in bridge.get("extensionVersion", "").split("."))
+        except (ValueError, AttributeError):
+            version = ()
+        if version < (1, 0, 2):
+            return {
+                "status": "needs_extension_update",
+                "minimumVersion": "1.0.2",
+                "instruction": "Update and reload Jev Browser Bridge to version 1.0.2 or newer, then retry.",
+            }
         # Never retry this mutation: a timeout can mean the tab was already created.
         tab = extension_call("create_tab", {"url": url, "active": active})
         listed[tab["tabId"]] = tab
