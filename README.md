@@ -12,6 +12,29 @@ Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks 
 
 **Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
 
+> This KofanLabs fork adds a Windows MCP server and a Chrome extension bridge for
+> controlling tabs that are already open in your signed-in Chrome. It does not use
+> Chrome remote debugging, copy browser profiles, or launch a separate browser.
+
+## Windows quick start
+
+Requirements: Windows 10/11, Google Chrome, Python 3.12+, and a TypeSafe Jev API
+key (or a Vercel AI Gateway key with access to Jev).
+
+1. Download or clone this repository.
+2. Double-click **`Install-Windows.cmd`**.
+3. Double-click **`Ayarlar.cmd`**, choose **Save/change API key**, and paste the
+   key into the hidden prompt.
+4. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**,
+   and select this repository's `extension` folder.
+5. Add the generated `mcp-config.json` to Codex, Grok, Claude Desktop, or another
+   MCP host, then restart that host.
+
+The API key is encrypted with Windows DPAPI and is only readable by the Windows
+account that saved it. The extension connects to an authenticated loopback bridge
+on `127.0.0.1`. See [KURULUM.md](KURULUM.md) for Turkish instructions and
+[SECURITY.md](SECURITY.md) for the trust boundary.
+
 <a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>
 
 [Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](jev_ultrafast/agent.py)
@@ -53,8 +76,8 @@ There are no site-specific action scripts or prepared field strings in the polic
 ## Try it
 
 ```bash
-git clone https://github.com/browser-use/jev-ultrafast.git
-cd jev-ultrafast
+git clone https://github.com/kofanlabs/jev-browser-chrome.git
+cd jev-browser-chrome
 uv sync
 cp .env.example .env
 # Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
@@ -63,7 +86,10 @@ uv run jev
 
 Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
 
-Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
+The Windows MCP integration connects through the included **Jev Browser Bridge**
+Chrome extension. It controls existing signed-in HTTP(S) tabs without Chrome
+remote debugging. The upstream demo can still use
+[Browser Harness](https://github.com/browser-use/browser-harness).
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
@@ -140,3 +166,8 @@ Tests are offline. `uv run python scripts/check_guards.py` checks real controls 
 ---
 
 [Browser Use](https://github.com/browser-use/browser-use) · [Browser Harness](https://github.com/browser-use/browser-harness) · [TypeSafe speculative fan-out](https://docs.typesafe.ai/patterns/fan-out)
+
+This fork is based on
+[`browser-use/jev-ultrafast`](https://github.com/browser-use/jev-ultrafast) at
+commit `1231850a0bf1a0c0341fe408ef1668dbbfdfac46` and remains available under
+the original MIT license.

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jev-browser-chrome": {
+      "command": "C:/FULL/PATH/TO/jev-browser-chrome/.venv/Scripts/python.exe",
+      "args": ["C:/FULL/PATH/TO/jev-browser-chrome/chrome_mcp.py"]
+    }
+  }
+}

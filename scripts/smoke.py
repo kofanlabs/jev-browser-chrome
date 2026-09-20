@@ -28,8 +28,12 @@ def main():
             for state in agent.run():
                 history = state["history"]
                 print(
-                    state["elapsed_ms"], "ms", len(history), "actions",
-                    history[-1]["action"] if history else "", flush=True,
+                    state["elapsed_ms"],
+                    "ms",
+                    len(history),
+                    "actions",
+                    history[-1]["action"] if history else "",
+                    flush=True,
                 )
                 (output / "state.json").write_text(json.dumps(state, indent=2))
                 if len(history) >= args.max_actions:

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Jev Browser Bridge",
+  "version": "1.0.1",
+  "description": "Connects Jev to the user's existing Chrome without remote debugging.",
+  "permissions": ["alarms", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Jev Browser Bridge"
+  }
+}

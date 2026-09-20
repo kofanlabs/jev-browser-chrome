@@ -8,3 +8,8 @@ artifacts/
 *.egg-info/
 
 dist/
+local-state/
+runs/
+extension/config.js
+config/
+mcp-config.json

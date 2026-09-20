@@ -10,15 +10,25 @@ from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
-READ_STATE = Path(__file__).with_name("snapshot.js").read_text()
+READ_STATE = Path(__file__).with_name("snapshot.js").read_text(encoding="utf-8")
 MARKER = f"(() => {{ const state={READ_STATE}; return state?.marker ?? null; }})()"
+
 
 class StalePage(ValueError):
     """A decision no longer refers to the observed page."""
 
 
 class Browser:
-    def __init__(self, url):
+    def __init__(self, url, target_id=None):
+        self.owns_tab = target_id is None
+        if target_id is not None:
+            targets = cdp("Target.getTargets")["targetInfos"]
+            matches = [t for t in targets if t["targetId"] == target_id and t["type"] == "page"]
+            if len(matches) != 1 or matches[0]["url"] != url:
+                raise ValueError("Selected existing tab changed; list tabs again")
+            self.target = target_id
+            self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
+            return
         ensure_daemon()
         self.target = cdp("Target.createTarget", url="about:blank", background=True)["targetId"]
         self.session = cdp("Target.attachToTarget", targetId=self.target, flatten=True)["sessionId"]
@@ -68,7 +78,9 @@ class Browser:
                         else requestAnimationFrame(ready);
                       };
                       requestAnimationFrame(ready);
-                    }))(""" + json.dumps(action) + ")",
+                    }))("""
+                    + json.dumps(action)
+                    + ")",
                     awaitPromise=True,
                     returnByValue=True,
                 )
@@ -76,9 +88,7 @@ class Browser:
                 pass
         for attempt in range(10):
             try:
-                return browser_operation(
-                    {"operation": "observe", "session": self.session, "screenshot": screenshot}
-                )
+                return browser_operation({"operation": "observe", "session": self.session, "screenshot": screenshot})
             except StalePage:
                 if attempt == 9:
                     raise
@@ -108,7 +118,10 @@ class Browser:
 
     def close(self):
         if self.target:
-            cdp("Target.closeTarget", targetId=self.target)
+            if self.owns_tab:
+                cdp("Target.closeTarget", targetId=self.target)
+            else:
+                cdp("Target.detachFromTarget", sessionId=self.session)
             self.target = None
 
 
@@ -141,7 +154,8 @@ def browser_operation(request):
             if type(action["node"]) is not int:
                 raise ValueError("Invalid observed node")
             # Code-owned node IDs refer to actual observed elements, never model-generated selectors.
-            target = evaluate("""(action => {
+            target = evaluate(
+                """(action => {
               const e=window.__jevFast?.nodes.get(action.node);
               if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
                   !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
@@ -157,7 +171,10 @@ def browser_operation(request):
                 e.dispatchEvent(new Event('change',{bubbles:true}));
               }
               return {x,y};
-            })(""" + json.dumps(action) + ")")
+            })("""
+                + json.dumps(action)
+                + ")"
+            )
             if target is None:
                 if kind == "select":
                     raise RuntimeError("Dropdown execution was not confirmed; inspect before retrying.")

@@ -25,7 +25,8 @@ folder = Path(args.output)
 folder.mkdir(parents=True, exist_ok=False)
 source_hashes = {
     p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-    for p in (source / "jev_ultrafast").iterdir() if p.suffix in {".py", ".js"}
+    for p in (source / "jev_ultrafast").iterdir()
+    if p.suffix in {".py", ".js"}
 }
 raw = browser_module.cdp
 calls = defaultdict(list)

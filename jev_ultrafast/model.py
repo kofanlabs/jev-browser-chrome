@@ -116,7 +116,10 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    endpoint = os.environ.get("JEV_SYSTEMONE_ENDPOINT", "https://api.typesafe.ai/v1/systemone")
+    if endpoint not in {"https://api.typesafe.ai/v1/systemone", "https://ai-gateway.vercel.sh/typesafe/v1/systemone"}:
+        raise ValueError("Unsupported configured Jev endpoint")
+    result = post_json(endpoint, os.environ["TYPESAFE_API_KEY"], body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None

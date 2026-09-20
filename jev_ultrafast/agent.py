@@ -10,13 +10,14 @@ from .questions import MAX_STEPS
 
 
 class Agent:
-    def __init__(self, url, goals, *, record_dir=None, screenshots=False):
+    def __init__(self, url, goals, *, record_dir=None, screenshots=False, tab_id=None, page_guard=None, browser=None):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
         if not task:
             raise ValueError("Supply a task")
         plan = [task]
         self.pending_text = None
-        self.browser = Browser(url)
+        self.page_guard = page_guard
+        self.browser = browser or (Browser(url, target_id=tab_id) if tab_id is not None else Browser(url))
         self.record_dir = Path(record_dir) if record_dir else None
         self.screenshots = screenshots or bool(record_dir)
         try:
@@ -74,6 +75,8 @@ class Agent:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
                 raise ValueError("Reached the demo's model-call budget")
+            if self.page_guard:
+                self.page_guard(state["page"])
             state["decision"] = choose(state["page"], state["goal"], state["history"])
             state["decisions"].append(
                 {
