@@ -24,7 +24,7 @@ def prepare_provider() -> None:
         raise RuntimeError("Set TYPESAFE_API_KEY before starting the Jev MCP server")
     provider_file = ROOT / "config/provider.json"
     if not provider_file.is_file():
-        raise RuntimeError("No Jev API key is configured. Run Ayarlar.cmd and choose API key setup")
+        raise RuntimeError("No Jev API key is configured. Run Settings.cmd and choose API key setup")
     provider = json.loads(provider_file.read_text(encoding="utf-8-sig"))["provider"]
     if provider not in {"vercel", "typesafe"}:
         raise ValueError("Unknown locally configured provider")

@@ -21,7 +21,7 @@ if ($python) {
 
 Write-Host ''
 Write-Host 'Installation complete.' -ForegroundColor Green
-Write-Host '1. Ayarlar.cmd: save your Jev API key.'
+Write-Host '1. Settings.cmd: save your Jev API key.'
 Write-Host '2. In Chrome, enable Developer mode and Load unpacked: extension'
 Write-Host '3. Add mcp-config.json to your MCP host, then restart the host.'
 Start-Process 'chrome.exe' 'chrome://extensions/'

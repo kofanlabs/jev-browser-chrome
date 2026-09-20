@@ -23,7 +23,7 @@ key (or a Vercel AI Gateway key with access to Jev).
 
 1. Download or clone this repository.
 2. Double-click **`Install-Windows.cmd`**.
-3. Double-click **`Ayarlar.cmd`**, choose **Save/change API key**, and paste the
+3. Double-click **`Settings.cmd`**, choose **Save/change API key**, and paste the
    key into the hidden prompt.
 4. Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**,
    and select this repository's `extension` folder.
@@ -32,7 +32,7 @@ key (or a Vercel AI Gateway key with access to Jev).
 
 The API key is encrypted with Windows DPAPI and is only readable by the Windows
 account that saved it. The extension connects to an authenticated loopback bridge
-on `127.0.0.1`. See [KURULUM.md](KURULUM.md) for Turkish instructions and
+on `127.0.0.1`. See [WINDOWS.md](WINDOWS.md) for complete Windows instructions and
 [SECURITY.md](SECURITY.md) for the trust boundary.
 
 <a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>

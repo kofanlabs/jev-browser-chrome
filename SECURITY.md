@@ -7,7 +7,7 @@ you do not want an MCP host to control browser tabs.
 
 The extension connects only to `127.0.0.1` using a randomly generated bearer
 token. The token, API keys, run screenshots, and local configuration are ignored
-by Git. API keys saved through `Ayarlar.cmd` are encrypted with Windows DPAPI and
+by Git. API keys saved through `Settings.cmd` are encrypted with Windows DPAPI and
 can only be decrypted by the Windows account that saved them.
 
 Visible page text is sent to the configured Jev provider for action selection.
