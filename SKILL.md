@@ -20,6 +20,11 @@ Playwright launch or cloud browser is permitted by this user's preference.
    this integration does not use it. Do not claim a working connection before it succeeds.
 2. Call `jev_browser_tabs`. Select a tab by its observed title and URL. Ask
    only if the intended tab/profile cannot be identified. Do not invent IDs.
+   If the task needs a new page, call `jev_browser_open_tab(url, active=true)`
+   with the task-related HTTP(S) URL. Opening a new tab is authorized as part
+   of the browser task; do not ask the user to open it manually. Re-list tabs
+   after loading to obtain the current URL before starting Jev. If opening
+   times out, list tabs before retrying to avoid duplicates.
 3. Call `jev_browser_run` with the user's bounded goal, observed `tab_id`,
    exact `expected_url`, and the authorized `allowed_origins` (scheme+host).
    Use `act=true` for an authorized browser task; `act=false` only predicts.
@@ -57,5 +62,6 @@ Playwright launch or cloud browser is permitted by this user's preference.
 
 Load the repository's `extension/` directory once through Chrome's extension
 manager. The extension connects only to the authenticated loopback bridge and
-operates existing HTTP(S) tabs. It does not use remote debugging, launch Chrome,
-create or close tabs, copy a profile, or expose saved credentials.
+operates HTTP(S) tabs and can open new tabs in the connected personal Chrome.
+It does not use remote debugging, launch Chrome, close tabs, copy a profile,
+or expose saved credentials. New-tab support requires extension 1.0.2 or newer.

@@ -108,6 +108,21 @@ def jev_browser_connect() -> dict:
 
 
 @server.tool()
+def jev_browser_open_tab(url: str, active: bool = True) -> dict:
+    """Open a task-related HTTP(S) URL in a new tab in the connected personal Chrome."""
+    origin(url)
+    with lock:
+        if worker is not None and worker.is_alive():
+            raise ValueError("Stop or finish the current run before opening a tab")
+        if not connection_ready():
+            return {"status": "needs_browser_connection"}
+        # Never retry this mutation: a timeout can mean the tab was already created.
+        tab = extension_call("create_tab", {"url": url, "active": active})
+        listed[tab["tabId"]] = tab
+        return {"status": "opened", "tab": tab}
+
+
+@server.tool()
 def jev_browser_tabs() -> dict:
     """List existing normal tabs in the connected Chrome. Select an observed tab ID and URL; this does not create tabs."""
     global listed

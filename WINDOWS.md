@@ -37,7 +37,8 @@ Open Chrome and the page you want to use, then ask your agent, for example:
 > Use Jev Browser on the open hotel tab. Select the Design category, enable the
 > Free cancellation filter, and verify the result.
 
-The host first lists the currently visible tabs, binds the task to the selected
+The host can open a task-related HTTP(S) URL with `jev_browser_open_tab` in the
+connected personal Chrome (extension 1.0.2+). It then lists tabs, binds the task to the selected
 tab and allowed site origins, and starts the Jev loop. Jev chooses each operation
 and target. When a field needs free text, the host supplies only the requested
 value. At the end, the host independently checks the final page text and

@@ -5,6 +5,44 @@ import pytest
 import chrome_mcp
 
 
+def test_open_tab_returns_observed_tab_without_replacing_existing(monkeypatch):
+    monkeypatch.setattr(chrome_mcp, "worker", None)
+    monkeypatch.setattr(chrome_mcp, "connection_ready", lambda: True)
+    monkeypatch.setattr(chrome_mcp, "listed", {"old": {"url": "https://example.org/"}})
+    calls = []
+    tab = {"tabId": "new", "url": "https://example.com/", "active": True}
+
+    def call(method, params):
+        calls.append((method, params))
+        return tab
+
+    monkeypatch.setattr(chrome_mcp, "extension_call", call)
+    assert chrome_mcp.jev_browser_open_tab(tab["url"]) == {"status": "opened", "tab": tab}
+    assert "old" in chrome_mcp.listed and chrome_mcp.listed["new"] == tab
+    assert calls == [("create_tab", {"url": tab["url"], "active": True})]
+
+
+@pytest.mark.parametrize("url", ["file:///secret", "javascript:alert(1)", "https://user:pass@example.com"])
+def test_open_tab_rejects_non_web_or_credential_urls(url):
+    with pytest.raises(ValueError):
+        chrome_mcp.jev_browser_open_tab(url)
+
+
+def test_open_tab_timeout_is_not_retried(monkeypatch):
+    monkeypatch.setattr(chrome_mcp, "worker", None)
+    monkeypatch.setattr(chrome_mcp, "connection_ready", lambda: True)
+    calls = []
+
+    def call(*args):
+        calls.append(args)
+        raise TimeoutError("response lost")
+
+    monkeypatch.setattr(chrome_mcp, "extension_call", call)
+    with pytest.raises(TimeoutError):
+        chrome_mcp.jev_browser_open_tab("https://example.com/")
+    assert len(calls) == 1
+
+
 class FakeBrowser:
     def __init__(self, _url, _tab_id):
         self.page = {

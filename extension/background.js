@@ -85,6 +85,17 @@ async function execute(command) {
       active: Boolean(tab.active), windowId: tab.windowId
     }))};
   }
+  if (command.method === "create_tab") {
+    const url = new URL(params.url);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      throw new Error("Only HTTP(S) URLs without embedded credentials are supported.");
+    }
+    const tab = await chrome.tabs.create({url: url.href, active: params.active !== false});
+    return {
+      tabId: String(tab.id), url: tab.pendingUrl || tab.url || url.href,
+      title: tab.title || "", active: Boolean(tab.active), windowId: tab.windowId
+    };
+  }
   const tabId = Number(params.tabId);
   const tab = await chrome.tabs.get(tabId);
   if (!normalTab(tab)) throw new Error("The selected tab is unavailable or is not an HTTP(S) page.");
