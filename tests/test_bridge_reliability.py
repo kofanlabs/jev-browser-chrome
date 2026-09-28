@@ -177,25 +177,34 @@ def test_rpc_deadline_includes_waiting_for_the_serial_command_lock():
     assert hub.pending == {}
 
 
-def test_rpc_does_not_send_when_lock_reports_acquisition_after_deadline():
+@pytest.mark.parametrize("overrun", [0.0, 0.005], ids=["at-deadline", "past-deadline"])
+def test_rpc_does_not_send_when_lock_reports_acquisition_after_deadline(monkeypatch, overrun):
     hub = extension_daemon.Hub("offline-test-token")
     websocket, socket_thread = connect(hub)
 
-    class LateLock:
-        def acquire(self, timeout):
-            time.sleep(timeout + 0.005)
-            return True
+    try:
+        clock = SimpleNamespace(now=time.monotonic())
+        # Replace only the daemon's clock after the socket handshake. Other
+        # threads and this test's synchronization retain the real time module.
+        monkeypatch.setattr(extension_daemon, "time", SimpleNamespace(monotonic=lambda: clock.now))
 
-        def release(self):
-            pass
+        class LateLock:
+            def acquire(self, timeout):
+                clock.now += timeout + overrun
+                return True
 
-    hub.rpc_lock = LateLock()
-    with pytest.raises(TimeoutError, match="waiting to run"):
-        hub.call("create_tab", {}, timeout=0.02)
-    assert websocket.sent.empty()
-    assert hub.pending == {}
-    websocket.finish()
-    socket_thread.join(timeout=1.0)
+            def release(self):
+                pass
+
+        hub.rpc_lock = LateLock()
+        with pytest.raises(TimeoutError, match="waiting to run"):
+            hub.call("create_tab", {}, timeout=0.02)
+        assert websocket.sent.empty()
+        assert hub.pending == {}
+    finally:
+        websocket.finish()
+        socket_thread.join(timeout=1.0)
+        assert not socket_thread.is_alive()
 
 
 def test_malformed_response_result_is_rejected_and_pending_is_cleaned():
