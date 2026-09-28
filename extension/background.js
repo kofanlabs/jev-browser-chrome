@@ -3,6 +3,11 @@ importScripts("config.js");
 
 let socket = null;
 let reconnectTimer = null;
+let actionWatchSequence = 0;
+
+const ACTION_SETTLE_MS = 3500;
+const DOM_SETTLE_MS = 700;
+const DOM_QUIET_MS = 60;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -21,9 +26,50 @@ async function runSnapshot(tabId) {
   return value;
 }
 
-function pageAct(action, expectedPageKey, expectedGuard, expectedUrl, text) {
+function pageAct(action, expectedPageKey, expectedGuard, expectedUrl, text, watchId) {
   const cache = window.__jevFast;
   if (!cache || location.href !== expectedUrl) return {stale: true};
+  let baseline = null;
+  const visibleFingerprint = () => {
+    const selector = 'a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
+      '[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="switch"],'+
+      '[role="tab"],[role="menuitem"],[role="option"],[role="combobox"],[role="textbox"],'+
+      '[role="searchbox"],[role="spinbutton"],[role="gridcell"]';
+    const controls = [...document.querySelectorAll(selector)].slice(0, 500).map(e => {
+      if (['password', 'file', 'hidden'].includes(e.type) ||
+          e.closest('[aria-hidden="true"],[inert]') ||
+          !e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) return null;
+      const bounds = e.getBoundingClientRect();
+      if (!bounds.width || !bounds.height || bounds.bottom <= 0 || bounds.top >= innerHeight ||
+          bounds.right <= 0 || bounds.left >= innerWidth) return null;
+      return [e.tagName, e.getAttribute('role'), e.getAttribute('aria-label'),
+        e.innerText?.slice(0, 240) || '', e.value ?? null, e.checked ?? null,
+        e.selectedIndex ?? null, e.matches(':disabled'), e.getAttribute('aria-disabled'),
+        e.getAttribute('aria-expanded'), e.getAttribute('aria-checked'),
+        e.getAttribute('aria-selected'), e.getAttribute('href'), e.getAttribute('title'),
+        e.getAttribute('alt')];
+    }).filter(Boolean).slice(0, 250);
+    const state = JSON.stringify([location.href, document.title, scrollX, scrollY,
+      innerWidth, innerHeight, document.body?.innerText?.slice(0, 8000) || '', controls]);
+    let first = 0x811c9dc5;
+    let second = 0x9e3779b9;
+    for (let index = 0; index < state.length; index += 1) {
+      const code = state.charCodeAt(index);
+      first = Math.imul(first ^ code, 0x01000193);
+      second = Math.imul(second ^ (code + first), 0x85ebca6b);
+    }
+    return `${first >>> 0}:${second >>> 0}:${state.length}`;
+  };
+  const pageBusy = () => {
+    const busyNode = [...document.querySelectorAll('[aria-busy="true"],[role="progressbar"]')]
+      .some(e => {
+        if (!e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) return false;
+        const bounds = e.getBoundingClientRect();
+        return bounds.width > 0 && bounds.height > 0 && bounds.bottom > 0 && bounds.top < innerHeight &&
+          bounds.right > 0 && bounds.left < innerWidth;
+      });
+    return busyNode;
+  };
   if (Number.isInteger(action.node)) {
     const element = cache.nodes.get(action.node);
     const samePage = JSON.stringify(cache.pageKey()) === JSON.stringify(expectedPageKey);
@@ -39,9 +85,19 @@ function pageAct(action, expectedPageKey, expectedGuard, expectedUrl, text) {
     const y = rect.y + rect.height / 2;
     if (!rect.width || !rect.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight ||
         !element.contains(document.elementFromPoint(x, y))) return {stale: true};
+    if (action.kind === "fill" &&
+        (element.readOnly || element.getAttribute("aria-readonly") === "true")) return {stale: true};
+    if (action.kind === "select" && (element.tagName !== "SELECT" ||
+        ![...element.options].some(option => option.value === action.value && !option.disabled))) {
+      return {stale: true};
+    }
+    if (!["fill", "select", "click"].includes(action.kind)) return {stale: true};
+    const previousWatch = window.__jevActionWatch;
+    previousWatch?.observer?.disconnect();
+    baseline = visibleFingerprint();
+    window.__jevActionWatch = {id: watchId, signature: visibleFingerprint, busy: pageBusy};
 
     if (action.kind === "fill") {
-      if (element.readOnly || element.getAttribute("aria-readonly") === "true") return {stale: true};
       element.focus();
       if (element.isContentEditable) {
         element.textContent = text;
@@ -53,10 +109,6 @@ function pageAct(action, expectedPageKey, expectedGuard, expectedUrl, text) {
       element.dispatchEvent(new InputEvent("input", {bubbles: true, inputType: "insertText", data: text}));
       element.dispatchEvent(new Event("change", {bubbles: true}));
     } else if (action.kind === "select") {
-      if (element.tagName !== "SELECT" ||
-          ![...element.options].some(option => option.value === action.value && !option.disabled)) {
-        return {stale: true};
-      }
       const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
       if (setter) setter.call(element, action.value); else element.value = action.value;
       element.dispatchEvent(new Event("input", {bubbles: true}));
@@ -66,11 +118,110 @@ function pageAct(action, expectedPageKey, expectedGuard, expectedUrl, text) {
       element.click();
     }
   } else if (action.kind === "scroll") {
+    const previousWatch = window.__jevActionWatch;
+    previousWatch?.observer?.disconnect();
+    baseline = visibleFingerprint();
+    window.__jevActionWatch = {id: watchId, signature: visibleFingerprint, busy: pageBusy};
     window.scrollBy({top: action.delta, left: 0, behavior: "instant"});
   } else if (action.kind !== "wait") {
     return {stale: true};
   }
-  return {executed: action.id};
+  const watch = window.__jevActionWatch;
+  return {
+    executed: action.id,
+    watchId,
+    baseline: watch?.id === watchId ? baseline : null,
+    immediate: watch?.id === watchId ? watch.signature() : null,
+    immediateBusy: watch?.id === watchId ? watch.busy() : false
+  };
+}
+
+function readActionWatch(watchId) {
+  const watch = window.__jevActionWatch;
+  if (!watch || watch.id !== watchId || typeof watch.signature !== "function") return null;
+  return {signature: watch.signature(), busy: Boolean(watch.busy?.())};
+}
+
+function stopActionWatch(watchId) {
+  const watch = window.__jevActionWatch;
+  if (watch?.id !== watchId) return false;
+  watch.observer?.disconnect();
+  delete window.__jevActionWatch;
+  return true;
+}
+
+function watchNavigation(tabId, expectedUrl) {
+  const state = {started: false};
+  const listener = (changedTabId, changeInfo, tab) => {
+    if (changedTabId !== tabId) return;
+    if (changeInfo.status === "loading" || tab?.pendingUrl ||
+        (changeInfo.url && changeInfo.url !== expectedUrl) || (tab?.url && tab.url !== expectedUrl)) {
+      state.started = true;
+    }
+  };
+  const updates = chrome.tabs.onUpdated;
+  updates?.addListener?.(listener);
+  return {
+    state,
+    inspect(tab) {
+      if (tab?.status === "loading" || tab?.pendingUrl || (tab?.url && tab.url !== expectedUrl)) {
+        state.started = true;
+      }
+    },
+    close() { updates?.removeListener?.(listener); }
+  };
+}
+
+async function settleAction(tabId, action, expectedNavigation, result, navigation) {
+  const startedAt = Date.now();
+  const deadline = startedAt + (action.kind === "click" ? ACTION_SETTLE_MS : DOM_SETTLE_MS);
+  let lastSignature = result.immediate || result.baseline;
+  let lastSignatureChange = result.baseline !== lastSignature ? Date.now() : null;
+  let visibleChanged = lastSignatureChange !== null;
+  let busy = Boolean(result.immediateBusy);
+  let delay = 20;
+
+  while (Date.now() < deadline) {
+    let tab;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch {
+      return {settled: false, settlement: "tab-unavailable"};
+    }
+    if (tab.frozen) return {settled: false, settlement: "frozen"};
+    navigation.inspect(tab);
+    if (navigation.state.started && tab.status === "complete" && !tab.pendingUrl) {
+      return {settled: true, settlement: "navigation-complete", url: tab.url};
+    }
+
+    if (!navigation.state.started) {
+      let observed;
+      try {
+        const values = await chrome.scripting.executeScript({
+          target: {tabId}, func: readActionWatch, args: [result.watchId], world: "ISOLATED"
+        });
+        observed = values?.[0]?.result;
+      } catch {
+        return {settled: false, settlement: "observation-unavailable"};
+      }
+      if (observed?.signature && observed.signature !== lastSignature) {
+        lastSignature = observed.signature;
+        lastSignatureChange = Date.now();
+        visibleChanged = true;
+      }
+      busy = Boolean(observed?.busy);
+      if (visibleChanged && !busy && !expectedNavigation &&
+          Date.now() - lastSignatureChange >= DOM_QUIET_MS) {
+        return {settled: true, settlement: "visible-change"};
+      }
+    }
+    await sleep(delay);
+    delay = Math.min(Math.round(delay * 1.6), 180);
+  }
+  if (navigation.state.started) return {settled: false, settlement: "navigation-timeout"};
+  if (busy) return {settled: false, settlement: "busy-timeout"};
+  if (visibleChanged) return {settled: false, settlement: "dom-change-inconclusive"};
+  return {settled: false, settlement: "no-visible-change"};
 }
 
 async function execute(command) {
@@ -119,16 +270,40 @@ async function execute(command) {
       await sleep(100);
       return {executed: params.action.id};
     }
-    const results = await chrome.scripting.executeScript({
-      target: {tabId},
-      func: pageAct,
-      args: [params.action, params.pageKey, params.guard ?? null, params.url, params.text ?? null],
-      world: "ISOLATED"
-    });
-    const value = results?.[0]?.result;
-    if (!value || value.stale) throw new Error("STALE_PAGE");
-    await sleep(params.action?.kind === "fill" ? 200 : 70);
-    return value;
+    if (tab.frozen) throw new Error("The selected tab is frozen; activate it before interacting.");
+    const action = params.action;
+    const watchId = `${tabId}:${Date.now()}:${++actionWatchSequence}`;
+    const navigation = watchNavigation(tabId, params.url);
+    const expectedNavigation = typeof params.guard?.[12] === "string" && params.guard[12].length > 0;
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: {tabId},
+        func: pageAct,
+        args: [action, params.pageKey, params.guard ?? null, params.url, params.text ?? null, watchId],
+        world: "ISOLATED"
+      });
+      const value = results?.[0]?.result;
+      if (value?.stale) throw new Error("STALE_PAGE");
+      if (!value) throw new Error("ACTION_OUTCOME_UNKNOWN");
+      if (value.executed !== action.id) throw new Error("ACTION_OUTCOME_UNKNOWN");
+
+      let settlement;
+      try {
+        settlement = await settleAction(tabId, action, expectedNavigation, value, navigation);
+      } catch {
+        settlement = {settled: false, settlement: "observation-unavailable"};
+      }
+      try {
+        await chrome.scripting.executeScript({
+          target: {tabId}, func: stopActionWatch, args: [watchId], world: "ISOLATED"
+        });
+      } catch {
+        // The action may have navigated, or the tab may have frozen. Its result is already confirmed.
+      }
+      return {executed: value.executed, ...settlement};
+    } finally {
+      navigation.close();
+    }
   }
   if (command.method === "capture") {
     await chrome.tabs.update(tabId, {active: true});
@@ -150,25 +325,37 @@ function connect() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
   const config = self.JEV_BRIDGE_CONFIG;
   if (!config?.token || !Number.isInteger(config.port)) return;
-  socket = new WebSocket(`ws://127.0.0.1:${config.port}/${config.token}`);
-  socket.onopen = () => socket.send(JSON.stringify({
-    type: "hello", extensionId: chrome.runtime.id, version: chrome.runtime.getManifest().version
-  }));
-  socket.onmessage = async event => {
+  const connection = new WebSocket(`ws://127.0.0.1:${config.port}/${config.token}`);
+  socket = connection;
+  connection.onopen = () => {
+    if (socket !== connection || connection.readyState !== WebSocket.OPEN) return;
+    connection.send(JSON.stringify({
+      type: "hello", extensionId: chrome.runtime.id, version: chrome.runtime.getManifest().version
+    }));
+  };
+  connection.onmessage = async event => {
     let command;
     try {
       command = JSON.parse(event.data);
       if (command.type !== "command" || !command.id) return;
       const result = await execute(command);
-      socket.send(JSON.stringify({type: "response", id: command.id, result}));
+      if (socket === connection && connection.readyState === WebSocket.OPEN) {
+        connection.send(JSON.stringify({type: "response", id: command.id, result}));
+      }
     } catch (error) {
-      if (socket?.readyState === WebSocket.OPEN && command?.id) {
-        socket.send(JSON.stringify({type: "response", id: command.id, error: String(error?.message || error)}));
+      if (socket === connection && connection.readyState === WebSocket.OPEN && command?.id) {
+        connection.send(JSON.stringify({type: "response", id: command.id, error: String(error?.message || error)}));
       }
     }
   };
-  socket.onclose = scheduleReconnect;
-  socket.onerror = () => socket?.close();
+  connection.onclose = () => {
+    if (socket !== connection) return;
+    socket = null;
+    scheduleReconnect();
+  };
+  connection.onerror = () => {
+    if (socket === connection) connection.close();
+  };
 }
 
 setInterval(() => {

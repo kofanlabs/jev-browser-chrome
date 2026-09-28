@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Offline Jev reliability fixture definitions</title></head>
+<body>
+  <p>Static scenario definitions consumed by scripts/benchmark_reliability.py. This is not a live test page.</p>
+
+  <main hidden data-scenario="immediate_click"
+        data-url="https://reliability.test/immediate"
+        data-initial-text="Synthetic dashboard"
+        data-success-text="Immediate task complete"
+        data-result-url="https://reliability.test/immediate/done"
+        data-expected-outcome="done">
+    <button aria-label="Run immediate task" data-transition="complete">Run immediate task</button>
+  </main>
+
+  <main hidden data-scenario="delayed_change"
+        data-url="https://reliability.test/delayed"
+        data-initial-text="Synthetic dashboard"
+        data-loading-text="Loading report"
+        data-success-text="Delayed report ready"
+        data-result-url="https://reliability.test/report"
+        data-delay-observations="2"
+        data-expected-outcome="done">
+    <button aria-label="Load delayed report" data-transition="delay">Load delayed report</button>
+  </main>
+
+  <main hidden data-scenario="delayed_navigation"
+        data-url="https://reliability.test/delayed-navigation"
+        data-initial-text="Synthetic delayed navigation"
+        data-loading-text="Preparing navigation"
+        data-success-text="Delayed navigation complete"
+        data-result-url="https://reliability.test/delayed-navigation/done"
+        data-delay-observations="2"
+        data-expected-outcome="done">
+    <button aria-label="Start delayed navigation" data-transition="delay-navigation">Navigate after delay</button>
+  </main>
+
+  <main hidden data-scenario="text_form_select"
+        data-url="https://reliability.test/form"
+        data-initial-text="Synthetic profile form"
+        data-success-text="Profile saved"
+        data-result-url="https://reliability.test/form/saved"
+        data-expected-text="Ada Example"
+        data-expected-select="north"
+        data-expected-outcome="done">
+    <input type="text" aria-label="Display name" value="">
+    <select aria-label="Region">
+      <option value="south" selected>South</option>
+      <option value="north">North</option>
+      <option value="disabled" disabled>Unavailable</option>
+    </select>
+    <button aria-label="Save profile" data-transition="submit">Save profile</button>
+  </main>
+
+  <main hidden data-scenario="no_op"
+        data-url="https://reliability.test/no-op"
+        data-initial-text="Synthetic unchanged page"
+        data-expected-outcome="blocked">
+    <button aria-label="Try no-op" data-transition="no-op">Try no-op</button>
+  </main>
+
+  <main hidden data-scenario="cross_origin"
+        data-url="https://reliability.test/outbound"
+        data-initial-text="Synthetic outbound link"
+        data-expected-outcome="origin_rejected">
+    <a aria-label="Open external destination" href="https://outside.invalid/landing" data-transition="cross-origin">
+      External destination
+    </a>
+  </main>
+
+  <main hidden data-scenario="stale_action"
+        data-url="https://reliability.test/stale"
+        data-initial-text="Synthetic stale target"
+        data-success-text="Stale retry completed once"
+        data-result-url="https://reliability.test/stale/done"
+        data-fault="stale-once"
+        data-expected-outcome="done">
+    <button aria-label="Complete after stale check" data-transition="complete">Complete</button>
+  </main>
+
+  <main hidden data-scenario="connection_fault"
+        data-url="https://reliability.test/connection"
+        data-initial-text="Synthetic connection test"
+        data-success-text="Action completed before connection loss"
+        data-result-url="https://reliability.test/connection/done"
+        data-fault="connection-after-action"
+        data-expected-outcome="connection_error">
+    <button aria-label="Complete before connection loss" data-transition="complete">Complete</button>
+  </main>
+</body>
+</html>

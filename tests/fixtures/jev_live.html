@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev live reliability fixture</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f3f6fb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 16px; }
+    main {
+      width: min(100%, 680px);
+      margin: 0 auto;
+      padding: 24px;
+      border: 1px solid #d8e0ec;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 8px 28px rgb(32 55 91 / 8%);
+    }
+    .eyebrow { margin: 0 0 8px; color: #52647d; font-size: 14px; font-weight: 650; }
+    h1 { margin: 0; font-size: clamp(24px, 5vw, 32px); line-height: 1.2; }
+    #instruction { margin: 12px 0 20px; color: #40516a; line-height: 1.5; }
+    .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+    .meta-item { padding: 12px; border-radius: 10px; background: #f3f6fb; }
+    .meta-label { display: block; margin-bottom: 3px; color: #596a82; font-size: 12px; }
+    .meta-value { font-size: 15px; font-weight: 700; }
+    #controls { display: grid; gap: 14px; }
+    button, input, select { width: 100%; min-height: 46px; border-radius: 9px; font: inherit; }
+    button { padding: 10px 16px; border: 0; background: #2457d6; color: white; font-weight: 700; cursor: pointer; }
+    button:hover { background: #1947bd; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #87a9ff; outline-offset: 2px; }
+    label { display: grid; gap: 6px; font-size: 14px; font-weight: 650; }
+    input, select { padding: 9px 11px; border: 1px solid #aebbd0; background: white; color: #172033; }
+    #status { min-height: 52px; margin-top: 18px; padding: 14px; border: 1px solid #d8e0ec; border-radius: 10px; background: #f8faff; line-height: 1.45; }
+    #status[data-kind="success"] { border-color: #77c49b; background: #effaf3; color: #145b32; font-weight: 700; }
+    #status[data-kind="error"] { border-color: #e1a2a2; background: #fff5f5; color: #8d2020; }
+    #status[data-kind="working"] { border-color: #e5c66d; background: #fff9e8; }
+    .footnote { margin: 16px 0 0; color: #596a82; font-size: 12px; }
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      main { padding: 18px; }
+      .meta { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Local-only browser fixture</p>
+    <h1 id="title">Jev live reliability fixture</h1>
+    <p id="instruction"></p>
+    <section class="meta" aria-label="Fixture details">
+      <div class="meta-item"><span class="meta-label">Scenario</span><span class="meta-value" id="scenario-value"></span></div>
+      <div class="meta-item"><span class="meta-label">Action count</span><span class="meta-value" id="action-count" aria-live="polite">0</span></div>
+      <div class="meta-item"><span class="meta-label">Configured delay</span><span class="meta-value" id="delay-value"></span></div>
+    </section>
+    <section id="controls" aria-label="Scenario controls"></section>
+    <div id="status" role="status" aria-live="polite" aria-busy="false" data-kind="neutral">Ready.</div>
+    <p class="footnote">Uses fictional test data. No account, external service, or external request is involved.</p>
+  </main>
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      const scenario = params.get("scenario") || "immediate";
+      const requestedDelay = Number.parseInt(params.get("delay") || "600", 10);
+      const delayMs = Number.isFinite(requestedDelay) ? Math.min(30000, Math.max(0, requestedDelay)) : 600;
+      const requestedCount = Number.parseInt(params.get("count") || "0", 10);
+      const initialCount = Number.isFinite(requestedCount) ? Math.min(1000000, Math.max(0, requestedCount)) : 0;
+      const controls = document.getElementById("controls");
+      const instruction = document.getElementById("instruction");
+      const status = document.getElementById("status");
+      const countNode = document.getElementById("action-count");
+      document.getElementById("scenario-value").textContent = scenario;
+      document.getElementById("delay-value").textContent = scenario === "delayed-dom" || scenario === "delayed-nav" ? delayMs + " ms" : "Not timed";
+
+      let actionCount = scenario === "delayed-nav" || scenario === "nav-done" ? initialCount : 0;
+      const updateCount = () => { countNode.textContent = String(actionCount); };
+      const setStatus = (message, kind = "neutral") => {
+        status.textContent = message;
+        status.dataset.kind = kind;
+        status.setAttribute("aria-busy", String(kind === "working"));
+      };
+      const addButton = (label, onClick) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", onClick);
+        controls.append(button);
+        return button;
+      };
+
+      updateCount();
+
+      if (scenario === "immediate") {
+        instruction.textContent = "Click the button. The completion proof should appear immediately without navigation.";
+        addButton("Complete immediate action", () => {
+          actionCount += 1;
+          updateCount();
+          setStatus("SUCCESS: immediate action completed. The visible action count is " + actionCount + ".", "success");
+        });
+      } else if (scenario === "delayed-dom") {
+        instruction.textContent = "Click the button and wait for the delayed DOM completion. Repeated clicks are counted separately.";
+        let pending = 0;
+        let completed = 0;
+        addButton("Start delayed action", () => {
+          actionCount += 1;
+          pending += 1;
+          updateCount();
+          setStatus("Working: " + pending + " action(s) pending; wait " + delayMs + " ms.", "working");
+          window.setTimeout(() => {
+            completed += 1;
+            pending -= 1;
+            if (pending === 0) {
+              setStatus("SUCCESS: delayed DOM completion confirmed for " + completed + " action(s).", "success");
+            } else {
+              setStatus("Working: " + pending + " action(s) still pending; " + completed + " completed.", "working");
+            }
+          }, delayMs);
+        });
+      } else if (scenario === "delayed-nav") {
+        instruction.textContent = "Click the button and wait. This page will navigate locally to nav-done and carry the action count.";
+        let navigationStarted = false;
+        addButton("Continue after delay", () => {
+          actionCount += 1;
+          updateCount();
+          if (navigationStarted) {
+            setStatus("Additional click counted. The single navigation remains scheduled; final count " + actionCount + " will be carried forward.", "working");
+            return;
+          }
+          navigationStarted = true;
+          setStatus("Navigation scheduled in " + delayMs + " ms. Action count " + actionCount + " will be carried forward.", "working");
+          window.setTimeout(() => {
+            const destination = new URL(window.location.href);
+            destination.search = "?scenario=nav-done&count=" + encodeURIComponent(String(actionCount));
+            window.location.assign(destination.href);
+          }, delayMs);
+        });
+      } else if (scenario === "nav-done") {
+        instruction.textContent = "This page is the local destination for the delayed-navigation scenario. Check the URL and carried action count.";
+        if (actionCount > 0) {
+          setStatus("SUCCESS: delayed navigation reached nav-done. Carried action count: " + actionCount + ".", "success");
+        } else {
+          setStatus("No action count was carried to this page. Delayed-navigation success is not claimed.", "error");
+        }
+      } else if (scenario === "form") {
+        instruction.textContent = "Enter Ada Example, choose North, and save. Only that fictional name and region produce a success proof.";
+        const form = document.createElement("form");
+        form.id = "fixture-form";
+        form.method = "get";
+        const nameLabel = document.createElement("label");
+        nameLabel.htmlFor = "person-name";
+        nameLabel.append("Name");
+        const nameInput = document.createElement("input");
+        nameInput.id = "person-name";
+        nameInput.name = "name";
+        nameInput.autocomplete = "off";
+        nameLabel.append(nameInput);
+        const regionLabel = document.createElement("label");
+        regionLabel.htmlFor = "region";
+        regionLabel.append("Region");
+        const regionSelect = document.createElement("select");
+        regionSelect.id = "region";
+        regionSelect.name = "region";
+        regionSelect.innerHTML = "<option value=\"\">Choose a region</option><option value=\"north\">North</option><option value=\"south\">South</option>";
+        regionLabel.append(regionSelect);
+        const saveButton = document.createElement("button");
+        saveButton.type = "submit";
+        saveButton.textContent = "Save";
+        form.append(nameLabel, regionLabel, saveButton);
+        controls.append(form);
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          actionCount += 1;
+          updateCount();
+          const name = document.getElementById("person-name").value.trim();
+          const region = document.getElementById("region").value;
+          if (name === "Ada Example" && region === "north") {
+            setStatus("SUCCESS: saved Ada Example in North. Submit count: " + actionCount + ".", "success");
+          } else {
+            setStatus("Not saved. Enter Ada Example and select North, then try again.", "error");
+          }
+        });
+      } else if (scenario === "noop") {
+        instruction.textContent = "Click the counter action and verify that the visible count changes. This scenario intentionally never reports success.";
+        addButton("Record no-op action", () => {
+          actionCount += 1;
+          updateCount();
+          setStatus("NO-OP: action counted. No completion or success is claimed.");
+        });
+        setStatus("NO-OP scenario ready. A counter change is the only result; there is no success state.");
+      } else {
+        document.getElementById("title").textContent = "Unknown fixture scenario";
+        instruction.textContent = "Choose scenario=immediate, delayed-dom, delayed-nav, nav-done, form, or noop in the URL.";
+        setStatus("No scenario action was run.", "error");
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -65,13 +65,15 @@ def test_open_tab_timeout_is_not_retried(monkeypatch):
         raise TimeoutError("response lost")
 
     monkeypatch.setattr(chrome_mcp, "extension_call", call)
-    with pytest.raises(TimeoutError):
-        chrome_mcp.jev_browser_open_tab("https://example.com/")
+    result = chrome_mcp.jev_browser_open_tab("https://example.com/")
     assert len(calls) == 1
+    assert result["status"] == "outcome_unknown"
+    assert "List tabs" in result["instruction"]
 
 
 class FakeBrowser:
-    def __init__(self, _url, _tab_id):
+    def __init__(self, _url, _tab_id, deadline=None):
+        self.deadline = deadline
         self.page = {
             "url": "https://example.com/",
             "title": "Complete",
@@ -92,7 +94,7 @@ class FakeBrowser:
 
 
 class FakeAgent:
-    def __init__(self, _url, _goal, *, screenshots, page_guard, browser):
+    def __init__(self, _url, _goal, *, screenshots, page_guard, browser, run_guard=None):
         assert not screenshots
         self.browser = browser
         self.state = {"page": browser.observe(), "history": [], "status": "ready", "decision": None}
@@ -115,8 +117,13 @@ class FakeAgent:
         self.browser.close()
 
 
-def test_terminal_status_is_published_after_final_proof(tmp_path, monkeypatch):
+@pytest.mark.parametrize("capture_final", [False, True])
+def test_terminal_status_is_published_after_final_proof(tmp_path, monkeypatch, capture_final):
     events = []
+    if not capture_final:
+        monkeypatch.setattr(
+            FakeBrowser, "call", lambda *a, **k: pytest.fail("Background run must not capture/activate a tab")
+        )
     original_publish = chrome_mcp.publish
 
     def recording_publish(**values):
@@ -138,13 +145,17 @@ def test_terminal_status_is_published_after_final_proof(tmp_path, monkeypatch):
         max_steps=3,
         max_seconds=10,
         act=True,
+        capture_final=capture_final,
     )
 
     final_index = next(i for i, event in enumerate(events) if "final" in event)
     terminal_index = next(i for i, event in enumerate(events) if event.get("status") == "needs_verification")
     assert final_index < terminal_index
     assert chrome_mcp.public_state()["final"]["text"] == "SUCCESS"
-    assert (tmp_path / "runs/test-run/final.png").read_bytes() == b"png-proof"
+    if capture_final:
+        assert (tmp_path / "runs/test-run/final.png").read_bytes() == b"png-proof"
+    else:
+        assert "screenshotPath" not in chrome_mcp.public_state()["final"]
 
 
 def test_host_reply_clears_request_before_worker_resumes():

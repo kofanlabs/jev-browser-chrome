@@ -10,6 +10,7 @@ artifacts/
 dist/
 local-state/
 runs/
+/work/
 extension/config.js
 config/
 mcp-config.json

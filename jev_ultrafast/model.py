@@ -4,22 +4,43 @@ import json
 import math
 import os
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import httpx
 
 from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 
 CLIENT = httpx.Client(http2=True, timeout=25)
+_RUN_GUARD = ContextVar("jev_model_run_guard", default=None)
 
 
-def post_json(url, key, body):
+@contextmanager
+def run_guard_scope(run_guard):
+    token = _RUN_GUARD.set(run_guard)
+    try:
+        yield
+    finally:
+        _RUN_GUARD.reset(token)
+
+
+def _check_run_guard():
+    run_guard = _RUN_GUARD.get()
+    if run_guard:
+        run_guard()
+
+
+def post_json(url, key, body, extra_headers=None):
     for attempt in range(3):
+        _check_run_guard()
         try:
-            response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+            response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}", **(extra_headers or {})})
         except httpx.HTTPError:
             raise RuntimeError("Model connection failed; no action executed.") from None
         if response.status_code in {429, 529, 503} and attempt < 2:
+            _check_run_guard()
             time.sleep(0.5 * 2**attempt)
+            _check_run_guard()
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
@@ -119,7 +140,27 @@ def choose(state, goal, history):
     endpoint = os.environ.get("JEV_SYSTEMONE_ENDPOINT", "https://api.typesafe.ai/v1/systemone")
     if endpoint not in {"https://api.typesafe.ai/v1/systemone", "https://ai-gateway.vercel.sh/typesafe/v1/systemone"}:
         raise ValueError("Unsupported configured Jev endpoint")
-    result = post_json(endpoint, os.environ["TYPESAFE_API_KEY"], body)
+    if endpoint == "https://ai-gateway.vercel.sh/typesafe/v1/systemone":
+        result = post_json(
+            "https://ai-gateway.vercel.sh/v4/ai/evaluation-model",
+            os.environ["TYPESAFE_API_KEY"],
+            {"state": body["state"], "questions": questions},
+            extra_headers={
+                "ai-gateway-protocol-version": "0.0.1",
+                "ai-gateway-auth-method": "api-key",
+                "ai-evaluation-model-specification-version": "4",
+                "ai-model-id": "typesafe-ai/jev",
+            },
+        )
+        confidence = result.get("providerMetadata", {}).get("typesafe", {}).get("confidence", {})
+        if not isinstance(confidence, dict):
+            raise ValueError("Missing native TypeSafe confidence")
+        result["answers"] = {
+            name: {**answer, "confidence": confidence.get(name)} for name, answer in result.get("answers", {}).items()
+        }
+        result["model"] = "typesafe-ai/jev"
+    else:
+        result = post_json(endpoint, os.environ["TYPESAFE_API_KEY"], body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None

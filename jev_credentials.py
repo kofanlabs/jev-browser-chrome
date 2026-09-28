@@ -13,6 +13,16 @@ ROOT = Path(__file__).resolve().parent
 
 def prepare_provider() -> None:
     """Prefer environment variables, then the optional Windows DPAPI store."""
+    if sys.platform == "darwin" and not (os.environ.get("TYPESAFE_API_KEY") or os.environ.get("AI_GATEWAY_API_KEY")):
+        key_file = ROOT / "config/macos-key.json"
+        if key_file.exists():
+            if key_file.stat().st_mode & 0o077:
+                raise RuntimeError("Mac key file must have mode 0600")
+            data = json.loads(key_file.read_text())
+            variable = {"vercel": "AI_GATEWAY_API_KEY", "typesafe": "TYPESAFE_API_KEY"}.get(data.get("provider"))
+            if variable is None or not isinstance(data.get("key"), str) or len(data["key"]) < 20:
+                raise RuntimeError("Invalid Mac provider configuration")
+            os.environ[variable] = data["key"]
     if os.environ.get("TYPESAFE_API_KEY"):
         return
     if os.environ.get("AI_GATEWAY_API_KEY"):
@@ -21,7 +31,7 @@ def prepare_provider() -> None:
         os.environ.setdefault("TYPESAFE_DEFAULT_MODEL", "typesafe-ai/jev")
         return
     if sys.platform != "win32":
-        raise RuntimeError("Set TYPESAFE_API_KEY before starting the Jev MCP server")
+        raise RuntimeError("Set TYPESAFE_API_KEY or AI_GATEWAY_API_KEY, or run scripts/setup_macos.py --set-key")
     provider_file = ROOT / "config/provider.json"
     if not provider_file.is_file():
         raise RuntimeError("No Jev API key is configured. Run Settings.cmd and choose API key setup")

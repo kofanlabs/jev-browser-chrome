@@ -1,6 +1,6 @@
-# Jev Browser Bridge — Browser Automation for Windows
+# Jev Browser Bridge — Chrome on macOS and Windows
 
-A Windows adaptation of [Jev Ultrafast](https://github.com/browser-use/jev-ultrafast)
+A macOS and Windows adaptation of [Jev Ultrafast](https://github.com/browser-use/jev-ultrafast)
 for Chrome and Edge, with extension-based browser access and MCP integration for
 Codex, Grok, and other agents.
 
@@ -12,13 +12,19 @@ Codex, Grok, and other agents.
 
 **A browser agent with a dynamic, indexed action space.**
 
-Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM writes text only when the operation is `TYPE_TEXT`.
+Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM or the MCP host supplies text only after `TYPE_TEXT` is selected.
 
 **Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
 
 > This KofanLabs fork adds a Windows MCP server and a Chrome extension bridge for
 > controlling existing tabs and opening task-related tabs in your signed-in Chrome. It does not use
 > Chrome remote debugging, copy browser profiles, or launch a separate browser.
+
+## macOS quick start
+
+This local adaptation adds `Install-Mac.command`, Mac provider-key loading and
+a generated MCP configuration. See [MACOS.md](MACOS.md). Default new tabs are
+inactive and final screenshot capture is opt-in because it activates the tab.
 
 ## Windows quick start
 
@@ -75,7 +81,33 @@ page → element table → operation                 │
 
 Target questions are speculative. If the operation is `CLICK`, only `click_target` can execute. Two decisions, **one network round trip**. Each target head contains only compatible elements. Native dropdown choices carry an observed element/option index.
 
-There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
+There are no site-specific action scripts or hardcoded field strings in the policy. Optional caller-supplied runtime text is scoped data, not an action plan. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
+
+### Optional known text in MCP
+
+When the exposed `jev_browser_run` schema supports `text_inputs`, already-known,
+user-authorized non-secret text can satisfy a host handoff. Generic argument
+example (variables represent observed metadata and authorized text):
+
+```python
+text_inputs=[{
+    "page_url": observed_page_url,
+    "field_label": observed_field_label,
+    "field_role": observed_field_role,
+    "text": user_authorized_text,
+}]
+```
+
+Jev chooses TYPE_TEXT and the target first; an exact URL/label/role match to one
+visible fill node consumes the entry before the attempt, even if later rejected
+as stale. Misses, ambiguity, or incomplete snapshots use `needs_host`; omitting
+the option or passing `None` preserves that default. `preparedTextHits` counts
+reservation/consumption before an attempt, not actual typing or success;
+`hostTextRequests` counts host handoffs.
+Credentials, payment data, OTPs, and other secrets are excluded; this supplies
+no selectors or operations and does not authorize sending or publishing.
+See [SKILL.md](SKILL.md#known-text-optional) for limits. No extension change or
+reload is required; extension 1.0.4 remains in use.
 
 ## Try it
 

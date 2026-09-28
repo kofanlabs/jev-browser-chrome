@@ -1,27 +1,50 @@
 """The complete agent loop. Typed choices, observable state, bounded execution."""
 
 import base64
+import re
 import time
 from pathlib import Path
 
 from .browser import Browser, StalePage
-from .model import action_space, choose, field_context, field_text
+from .model import action_space, choose, field_context, field_text, run_guard_scope
 from .questions import MAX_STEPS
 
 
+class RunControlReached(RuntimeError):
+    """A bounded MCP run was stopped before its next model or browser action."""
+
+    def __init__(self, status):
+        self.status = status
+        super().__init__(status)
+
+
 class Agent:
-    def __init__(self, url, goals, *, record_dir=None, screenshots=False, tab_id=None, page_guard=None, browser=None):
+    def __init__(
+        self,
+        url,
+        goals,
+        *,
+        record_dir=None,
+        screenshots=False,
+        tab_id=None,
+        page_guard=None,
+        browser=None,
+        run_guard=None,
+    ):
         task = goals.strip() if isinstance(goals, str) else "\n".join(goals).strip()
         if not task:
             raise ValueError("Supply a task")
         plan = [task]
         self.pending_text = None
         self.page_guard = page_guard
+        self.run_guard = run_guard
         self.browser = browser or (Browser(url, target_id=tab_id) if tab_id is not None else Browser(url))
         self.record_dir = Path(record_dir) if record_dir else None
         self.screenshots = screenshots or bool(record_dir)
         try:
+            self._check_run_control()
             page = self.browser.observe(screenshot=self.screenshots)
+            self._check_run_control()
         except Exception:
             self.browser.close()
             raise
@@ -43,6 +66,11 @@ class Agent:
         if self.record_dir:
             self.record_dir.mkdir(parents=True, exist_ok=True)
             (self.record_dir / "000000.jpg").write_bytes(base64.b64decode(page["screenshot"]))
+
+    def _check_run_control(self):
+        run_guard = getattr(self, "run_guard", None)
+        if run_guard:
+            run_guard()
 
     def snapshot(self):
         return {
@@ -66,6 +94,7 @@ class Agent:
         elif name == "predict":
             if not state["browser"]:
                 raise ValueError("Start a demo first")
+            self._check_run_control()
             if state["started_at"] is None:
                 state["started_at"] = time.perf_counter()
             if not state["browser"].fresh(state["page"]):
@@ -77,7 +106,9 @@ class Agent:
                 raise ValueError("Reached the demo's model-call budget")
             if self.page_guard:
                 self.page_guard(state["page"])
-            state["decision"] = choose(state["page"], state["goal"], state["history"])
+            self._check_run_control()
+            with run_guard_scope(getattr(self, "run_guard", None)):
+                state["decision"] = choose(state["page"], state["goal"], state["history"])
             state["decisions"].append(
                 {
                     **state["decision"],
@@ -87,6 +118,7 @@ class Agent:
             )
             state["status"] = "predicted"
         elif name == "act":
+            self._check_run_control()
             decision, page = state["decision"], state["page"]
             if not decision or body.get("fingerprint") != page["fingerprint"]:
                 raise ValueError("Observe and choose before acting")
@@ -110,14 +142,39 @@ class Agent:
                 if not state["browser"].fresh(page):
                     raise StalePage("Page changed before text generation. Choose again.")
                 context = field_context(state["goal"], action, page, state["history"])
+                self._check_run_control()
                 if self.pending_text and self.pending_text[0] == context:
                     _, text, helper = self.pending_text
                 else:
-                    text, helper = field_text(context)
+                    with run_guard_scope(getattr(self, "run_guard", None)):
+                        text, helper = field_text(context)
                     self.pending_text = (context, text, helper)
                     state["text_calls"].append({**helper, "field": action["label"], "value": text})
             # Browser.act checks freshness immediately before input, including after text generation.
-            state["browser"].act(action, page, text=text)
+            self._check_run_control()
+            receipt = state["browser"].act(action, page, text=text)
+            compact_receipt = None
+            if isinstance(receipt, dict) and receipt.get("executed") == action["id"]:
+                compact_receipt = {"executed": action["id"]}
+                if isinstance(receipt.get("settled"), bool):
+                    compact_receipt["settled"] = receipt["settled"]
+                settlement = receipt.get("settlement")
+                if isinstance(settlement, str) and settlement in {
+                    "navigation-complete",
+                    "visible-change",
+                    "no-visible-change",
+                    "navigation-timeout",
+                    "frozen",
+                    "observation-unavailable",
+                    "tab-unavailable",
+                    "busy-timeout",
+                    "dom-change-inconclusive",
+                }:
+                    compact_receipt["settlement"] = settlement
+                for key in ("baseline", "immediate", "baselineHash", "immediateHash"):
+                    value = receipt.get(key)
+                    if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value):
+                        compact_receipt[key] = value
             self.pending_text = None
             state["elapsed_ms"] = round((time.perf_counter() - state["started_at"]) * 1000)
             # Record execution before observing. A stale post-action observation must not erase the action.
@@ -133,6 +190,7 @@ class Agent:
                     "text": text,
                     "text_helper": helper["model"] if helper else None,
                     "text_latency_ms": helper["latency_ms"] if helper else 0,
+                    "receipt": compact_receipt,
                     "operation": decision["operation"],
                     "target": decision["target"],
                     "page_changed": None,

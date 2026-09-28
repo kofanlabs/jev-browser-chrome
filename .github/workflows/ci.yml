@@ -6,7 +6,11 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,5 +24,7 @@ jobs:
       - run: pytest -q
       - run: node --check extension/background.js
       - run: node --check extension/snapshot.js
-      - run: node --test tests/test_extension_tabs.cjs
+      - run: node --check jev_ultrafast/snapshot.js
+      - run: node --check jev_ultrafast/static/app.js
+      - run: node --test tests/test_extension_tabs.cjs tests/test_extension_actions.cjs
       - run: python -m build
